@@ -7,9 +7,10 @@ public class DocumentService
     private const int MaxFileSizeBytes = 10 * 1024 * 1024; // 10 MB
     private const int MaxContextChars = 50_000;
 
-    public async Task<string> ExtractTextAsync(Stream stream, string fileName)
+    public async Task<string> ExtractTextAsync(Stream stream, string fileName, long? knownSize = null)
     {
-        if (stream.Length > MaxFileSizeBytes)
+        long fileSize = knownSize ?? (stream.CanSeek ? stream.Length : -1);
+        if (fileSize > MaxFileSizeBytes)
             throw new InvalidOperationException($"File exceeds the 10 MB limit.");
 
         string extension = Path.GetExtension(fileName).ToLowerInvariant();

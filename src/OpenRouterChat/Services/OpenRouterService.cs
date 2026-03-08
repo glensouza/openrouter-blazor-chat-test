@@ -58,7 +58,7 @@ public class OpenRouterService
             Messages = messages
         };
 
-        var httpRequest = new HttpRequestMessage(HttpMethod.Post, "/api/v1/chat/completions")
+        using var httpRequest = new HttpRequestMessage(HttpMethod.Post, "/api/v1/chat/completions")
         {
             Content = JsonContent.Create(request, options: JsonOptions)
         };
@@ -76,16 +76,19 @@ public class OpenRouterService
             throw new InvalidOperationException($"Failed to reach OpenRouter API: {ex.Message}", ex);
         }
 
-        if (!response.IsSuccessStatusCode)
+        using (response)
         {
-            string errorBody = await response.Content.ReadAsStringAsync(cancellationToken);
-            _logger.LogError("OpenRouter API error {Status}: {Body}", response.StatusCode, errorBody);
-            throw new InvalidOperationException($"OpenRouter API returned {(int)response.StatusCode}: {errorBody}");
-        }
+            if (!response.IsSuccessStatusCode)
+            {
+                string errorBody = await response.Content.ReadAsStringAsync(cancellationToken);
+                _logger.LogError("OpenRouter API error {Status}: {Body}", response.StatusCode, errorBody);
+                throw new InvalidOperationException($"OpenRouter API returned {(int)response.StatusCode}: {errorBody}");
+            }
 
-        var result = await response.Content.ReadFromJsonAsync<ChatResponse>(JsonOptions, cancellationToken);
-        return result?.Choices?.FirstOrDefault()?.Message?.Content
-               ?? throw new InvalidOperationException("Empty response from OpenRouter API.");
+            var result = await response.Content.ReadFromJsonAsync<ChatResponse>(JsonOptions, cancellationToken);
+            return result?.Choices?.FirstOrDefault()?.Message?.Content
+                   ?? throw new InvalidOperationException("Empty response from OpenRouter API.");
+        }
     }
 
     private sealed class ChatRequest

@@ -121,6 +121,7 @@
                           @bind="_userInput"
                           @bind:event="oninput"
                           @onkeydown="HandleKeyDown"
+                          @onkeydown:preventDefault="@_preventEnterDefault"
                           disabled="@_isSending"></textarea>
                 <button class="btn btn-primary send-btn" @onclick="SendMessageAsync" disabled="@(_isSending || string.IsNullOrWhiteSpace(_userInput))">
                     @if (_isSending)
@@ -176,7 +177,7 @@
         try
         {
             using var stream = file.OpenReadStream(maxAllowedSize: 10 * 1024 * 1024);
-            _contextDocument = await DocumentSvc.ExtractTextAsync(stream, file.Name);
+            _contextDocument = await DocumentSvc.ExtractTextAsync(stream, file.Name, file.Size);
             _contextFileName = file.Name;
         }
         catch (Exception ex)
@@ -192,11 +193,24 @@
         _fileError = string.Empty;
     }
 
+    private bool _preventEnterDefault;
+
     private async Task HandleKeyDown(KeyboardEventArgs e)
     {
-        if (e.Key == "Enter" && !e.ShiftKey && !_isSending && !string.IsNullOrWhiteSpace(_userInput))
+        if (e.Key == "Enter" && !e.ShiftKey)
         {
-            await SendMessageAsync();
+            _preventEnterDefault = true;
+            if (!_isSending && !string.IsNullOrWhiteSpace(_userInput))
+                await SendMessageAsync();
+        }
+        else if (e.Key == "Enter" && e.ShiftKey)
+        {
+            // Allow Shift+Enter to insert a newline without sending
+            _preventEnterDefault = false;
+        }
+        else
+        {
+            _preventEnterDefault = false;
         }
     }
 
