@@ -2,7 +2,7 @@ using OpenRouterChat.Components;
 using OpenRouterChat.Models;
 using OpenRouterChat.Services;
 
-var builder = WebApplication.CreateBuilder(args);
+WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
 
 // User secrets (API key stored as "OpenRouter:ApiKey" in developer secrets)
 builder.Configuration.AddUserSecrets<Program>(optional: true);
@@ -17,7 +17,7 @@ builder.Services.Configure<OpenRouterSettings>(builder.Configuration.GetSection(
 // Register the OpenRouter HTTP client
 builder.Services.AddHttpClient<OpenRouterService>((sp, client) =>
 {
-    var config = builder.Configuration;
+    ConfigurationManager config = builder.Configuration;
     string baseUrl = config["OpenRouter:BaseUrl"] ?? "https://openrouter.ai";
     string apiKey = config["OpenRouter:ApiKey"] ?? string.Empty;
 
@@ -29,7 +29,7 @@ builder.Services.AddHttpClient<OpenRouterService>((sp, client) =>
 // Register document parsing service
 builder.Services.AddScoped<DocumentService>();
 
-var app = builder.Build();
+WebApplication app = builder.Build();
 
 // Configure the HTTP request pipeline.
 if (!app.Environment.IsDevelopment())

@@ -1,0 +1,287 @@
+@page "/comparison"
+@rendermode InteractiveServer
+@inject OpenRouterService OpenRouterSvc
+@inject IOptions<OpenRouterSettings> SettingsOptions
+
+<PageTitle>Model Comparison</PageTitle>
+
+<div class="comparison-container">
+    <div class="comparison-header">
+        <h2>🤖 Model Comparison Arena</h2>
+        <p class="text-muted">Compare multiple models side-by-side with the same prompt</p>
+    </div>
+
+    <!-- Model Selection -->
+    <div class="card mb-3">
+        <div class="card-body">
+            <h5 class="card-title">Select Models</h5>
+            <div class="row">
+                @foreach (ModelSelection model in models.OrderBy(s => s.DisplayName))
+                {
+                    <div class="col-md-4 mb-2">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="@model.Id" @bind="model.IsSelected">
+                            <label class="form-check-label" for="@model.Id">
+                                @model.DisplayName
+                            </label>
+                        </div>
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+
+    <!-- Prompt Input -->
+    <div class="card mb-3">
+        <div class="card-body">
+            <h5 class="card-title">Prompt</h5>
+            <textarea class="form-control" rows="4" placeholder="Enter your prompt here..." @bind="prompt"></textarea>
+        </div>
+    </div>
+
+    <!-- Start Button -->
+    <div class="text-center mb-3">
+        <button class="btn btn-primary btn-lg" @onclick="StartComparisonAsync" disabled="@(isRunning || !models.Any(m => m.IsSelected) || string.IsNullOrWhiteSpace(prompt))">
+            @if (isRunning)
+            {
+                <span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span>
+                <span>Running Comparison...</span>
+            }
+            else
+            {
+                <span>🏁 Start Comparison</span>
+            }
+        </button>
+    </div>
+
+    <!-- Results -->
+    @if (results.Any())
+    {
+        <div class="results-section">
+            <h4>Results</h4>
+
+            <div class="card mb-3">
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table table-striped table-hover mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Model</th>
+                                    <th class="text-end">Duration (s)</th>
+                                    <th class="text-end">Prompt Tokens</th>
+                                    <th class="text-end">Completion Tokens</th>
+                                    <th class="text-end">Total Tokens</th>
+                                    <th class="text-end">Tokens / sec</th>
+                                    <th class="text-end">Action</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (ComparisonResult result in results.OrderByDescending(s => s.TokensPerSecond).ThenBy(s => s.PromptTokens).ThenBy(s => s.Duration.TotalSeconds))
+                                {
+                                    <tr>
+                                        <td>
+                                            <a href="@($"#{GetResultAnchor(result.ModelId)}")">@result.ModelName</a>
+                                        </td>
+                                        <td class="text-end">@result.Duration.TotalSeconds.ToString("F2")</td>
+                                        <td class="text-end">@result.PromptTokens</td>
+                                        <td class="text-end">@result.CompletionTokens</td>
+                                        <td class="text-end">@result.TotalTokens</td>
+                                        <td class="text-end">@result.TokensPerSecond.ToString("F2")</td>
+                                        <td class="text-end">
+                                            <button class="btn btn-sm btn-outline-primary"
+                                                    @onclick="() => RetryModelAsync(result.ModelId)"
+                                                    disabled="@isRunning">
+                                                Retry
+                                            </button>
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            @foreach (ComparisonResult result in results)
+            {
+                <div class="card mb-3 result-card" id="@GetResultAnchor(result.ModelId)">
+                    <div class="card-header">
+                        <strong>@result.ModelName</strong>
+                        <span class="badge bg-info ms-2">@result.Duration.TotalSeconds.ToString("F2")s</span>
+                        <span class="badge bg-secondary ms-2">@result.TokensPerSecond.ToString("F2") tokens/s</span>
+                        <button class="btn btn-sm btn-outline-primary float-end"
+                                @onclick="() => RetryModelAsync(result.ModelId)"
+                                disabled="@isRunning">
+                            Retry
+                        </button>
+                    </div>
+                    <div class="card-body">
+                        <div class="response-content">
+                            @((MarkupString)ConvertToHtml(result.Content))
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    private OpenRouterSettings settings = new();
+    private string prompt = string.Empty;
+    private bool isRunning;
+    private readonly List<ComparisonResult> results = [];
+
+    private List<ModelSelection> models = [];
+
+    private class ModelSelection
+    {
+        public string Id { get; set; } = string.Empty;
+        public string DisplayName { get; set; } = string.Empty;
+        public bool IsSelected { get; set; }
+    }
+
+    private static string ConvertToHtml(string markdown)
+    {
+        return Markdown.ToHtml(markdown);
+    }
+
+    private static string GetResultAnchor(string modelId)
+    {
+        char[] normalized = modelId
+            .Select(c => char.IsLetterOrDigit(c) ? char.ToLowerInvariant(c) : '-')
+            .ToArray();
+
+        return $"result-{new string(normalized)}";
+    }
+
+    protected override void OnInitialized()
+    {
+        settings = SettingsOptions.Value;
+        models = settings.Models.Select(m => new ModelSelection
+        {
+            Id = m.Id,
+            DisplayName = m.DisplayName,
+            IsSelected = true
+        }).ToList();
+    }
+
+    private async Task StartComparisonAsync()
+    {
+        List<ModelSelection> selectedModels = models.Where(m => m.IsSelected).ToList();
+        if (!selectedModels.Any() || string.IsNullOrWhiteSpace(prompt)) return;
+
+        isRunning = true;
+        results.Clear();
+
+        foreach (ModelSelection model in selectedModels)
+        {
+            try
+            {
+                ChatResult result = await OpenRouterSvc.ChatAsync(model.Id, [], prompt);
+                double durationSeconds = result.Duration.TotalSeconds;
+                double tokensPerSecond = durationSeconds > 0
+                    ? result.CompletionTokens / durationSeconds
+                    : 0;
+
+                results.Add(new ComparisonResult
+                {
+                    ModelId = model.Id,
+                    ModelName = model.DisplayName,
+                    Content = result.Content,
+                    Duration = result.Duration,
+                    PromptTokens = result.PromptTokens,
+                    CompletionTokens = result.CompletionTokens,
+                    TotalTokens = result.PromptTokens + result.CompletionTokens,
+                    TokensPerSecond = tokensPerSecond
+                });
+            }
+            catch (InvalidOperationException ex)
+            {
+                results.Add(new ComparisonResult
+                {
+                    ModelId = model.Id,
+                    ModelName = model.DisplayName,
+                    Content = $"Error: {ex.Message}",
+                    Duration = TimeSpan.Zero,
+                    PromptTokens = 0,
+                    CompletionTokens = 0,
+                    TotalTokens = 0,
+                    TokensPerSecond = 0
+                });
+            }
+            StateHasChanged();
+        }
+
+        isRunning = false;
+    }
+
+    private async Task RetryModelAsync(string modelId)
+    {
+        if (isRunning || string.IsNullOrWhiteSpace(prompt)) return;
+
+        ModelSelection? model = models.FirstOrDefault(m => m.Id == modelId);
+        if (model is null) return;
+
+        isRunning = true;
+
+        try
+        {
+            ChatResult result = await OpenRouterSvc.ChatAsync(model.Id, [], prompt);
+            double durationSeconds = result.Duration.TotalSeconds;
+            double tokensPerSecond = durationSeconds > 0
+                ? result.CompletionTokens / durationSeconds
+                : 0;
+
+            ComparisonResult updated = new()
+            {
+                ModelId = model.Id,
+                ModelName = model.DisplayName,
+                Content = result.Content,
+                Duration = result.Duration,
+                PromptTokens = result.PromptTokens,
+                CompletionTokens = result.CompletionTokens,
+                TotalTokens = result.PromptTokens + result.CompletionTokens,
+                TokensPerSecond = tokensPerSecond
+            };
+
+            int existingIndex = results.FindIndex(r => r.ModelId == model.Id);
+            if (existingIndex >= 0)
+            {
+                results[existingIndex] = updated;
+            }
+            else
+            {
+                results.Add(updated);
+            }
+        }
+        catch (InvalidOperationException ex)
+        {
+            int existingIndex = results.FindIndex(r => r.ModelId == model.Id);
+            ComparisonResult failed = new()
+            {
+                ModelId = model.Id,
+                ModelName = model.DisplayName,
+                Content = $"Error: {ex.Message}",
+                Duration = TimeSpan.Zero,
+                PromptTokens = 0,
+                CompletionTokens = 0,
+                TotalTokens = 0,
+                TokensPerSecond = 0
+            };
+
+            if (existingIndex >= 0)
+            {
+                results[existingIndex] = failed;
+            }
+            else
+            {
+                results.Add(failed);
+            }
+        }
+        finally
+        {
+            isRunning = false;
+        }
+    }
+}

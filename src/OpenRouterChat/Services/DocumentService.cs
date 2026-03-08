@@ -1,4 +1,6 @@
+using System.Text;
 using UglyToad.PdfPig;
+using UglyToad.PdfPig.Content;
 
 namespace OpenRouterChat.Services;
 
@@ -25,13 +27,13 @@ public class DocumentService
     private static async Task<string> ExtractPdfTextAsync(Stream stream)
     {
         // Read into memory to allow seeking (PdfPig requires seekable stream)
-        using var ms = new MemoryStream();
+        using MemoryStream ms = new MemoryStream();
         await stream.CopyToAsync(ms);
         ms.Seek(0, SeekOrigin.Begin);
 
-        using var document = PdfDocument.Open(ms);
-        var sb = new System.Text.StringBuilder();
-        foreach (var page in document.GetPages())
+        using PdfDocument? document = PdfDocument.Open(ms);
+        StringBuilder sb = new StringBuilder();
+        foreach (Page? page in document.GetPages())
         {
             sb.AppendLine(page.Text);
         }
@@ -44,7 +46,7 @@ public class DocumentService
 
     private static async Task<string> ExtractPlainTextAsync(Stream stream)
     {
-        using var reader = new StreamReader(stream, leaveOpen: true);
+        using StreamReader reader = new StreamReader(stream, leaveOpen: true);
         string text = await reader.ReadToEndAsync();
         if (text.Length > MaxContextChars)
             text = text[..MaxContextChars] + "\n\n[Content truncated due to length...]";
