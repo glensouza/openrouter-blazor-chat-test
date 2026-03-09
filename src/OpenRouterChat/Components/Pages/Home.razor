@@ -157,6 +157,10 @@
 </div>
 
 @code {
+    private static readonly MarkdownPipeline MarkdownPipeline = new MarkdownPipelineBuilder()
+        .UseAdvancedExtensions()
+        .Build();
+
     private OpenRouterSettings settings = new();
     private string SelectedModelId { get; set; } = string.Empty;
     private readonly List<ChatMessage> messages = [];
@@ -169,7 +173,9 @@
 
     private static string ConvertToHtml(string markdown)
     {
-        return Markdown.ToHtml(markdown);
+        return string.IsNullOrWhiteSpace(markdown)
+            ? string.Empty
+            : Markdown.ToHtml(markdown, MarkdownPipeline);
     }
 
     protected override void OnInitialized()

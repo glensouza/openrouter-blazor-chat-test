@@ -80,7 +80,7 @@
                                 {
                                     <tr>
                                         <td>
-                                            <a href="@($"#{GetResultAnchor(result.ModelId)}")">@result.ModelName</a>
+                                            <a href="/comparison@($"#{GetResultAnchor(result.ModelId)}")">@result.ModelName</a>
                                         </td>
                                         <td class="text-end">@result.Duration.TotalSeconds.ToString("F2")</td>
                                         <td class="text-end">@result.PromptTokens</td>
@@ -127,6 +127,10 @@
 </div>
 
 @code {
+    private static readonly MarkdownPipeline MarkdownPipeline = new MarkdownPipelineBuilder()
+        .UseAdvancedExtensions()
+        .Build();
+
     private OpenRouterSettings settings = new();
     private string prompt = string.Empty;
     private bool isRunning;
@@ -143,7 +147,9 @@
 
     private static string ConvertToHtml(string markdown)
     {
-        return Markdown.ToHtml(markdown);
+        return string.IsNullOrWhiteSpace(markdown)
+            ? string.Empty
+            : Markdown.ToHtml(markdown, MarkdownPipeline);
     }
 
     private static string GetResultAnchor(string modelId)
