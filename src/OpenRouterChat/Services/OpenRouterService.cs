@@ -1,5 +1,3 @@
-using System.Net.Http.Headers;
-using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.Extensions.Options;
@@ -7,24 +5,15 @@ using OpenRouterChat.Models;
 
 namespace OpenRouterChat.Services;
 
-public class OpenRouterService
+public class OpenRouterService(HttpClient httpClient, IOptions<OpenRouterSettings> settings, ILogger<OpenRouterService> logger)
 {
-    private readonly HttpClient httpClient;
-    private readonly OpenRouterSettings settings;
-    private readonly ILogger<OpenRouterService> logger;
+    private readonly OpenRouterSettings settings = settings.Value;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
     };
-
-    public OpenRouterService(HttpClient httpClient, IOptions<OpenRouterSettings> settings, ILogger<OpenRouterService> logger)
-    {
-        this.httpClient = httpClient;
-        this.settings = settings.Value;
-        this.logger = logger;
-    }
 
     public async Task<ChatResult> ChatAsync(
         string modelId,
@@ -33,7 +22,7 @@ public class OpenRouterService
         string? contextDocument = null,
         CancellationToken cancellationToken = default)
     {
-        List<ApiMessage> messages = new List<ApiMessage>();
+        List<ApiMessage> messages = [];
 
         if (!string.IsNullOrWhiteSpace(contextDocument))
         {
@@ -52,16 +41,14 @@ public class OpenRouterService
 
         messages.Add(new ApiMessage { Role = "user", Content = userMessage });
 
-        ChatRequest request = new ChatRequest
+        ChatRequest request = new()
         {
             Model = modelId,
             Messages = messages
         };
 
-        using HttpRequestMessage httpRequest = new HttpRequestMessage(HttpMethod.Post, "/api/v1/chat/completions")
-        {
-            Content = JsonContent.Create(request, options: JsonOptions)
-        };
+        using HttpRequestMessage httpRequest = new(HttpMethod.Post, "/api/v1/chat/completions");
+        httpRequest.Content = JsonContent.Create(request, options: JsonOptions);
         httpRequest.Headers.Add("HTTP-Referer", this.settings.HttpReferer);
         httpRequest.Headers.Add("X-Title", this.settings.AppTitle);
 
@@ -69,11 +56,11 @@ public class OpenRouterService
         HttpResponseMessage response;
         try
         {
-            response = await this.httpClient.SendAsync(httpRequest, cancellationToken);
+            response = await httpClient.SendAsync(httpRequest, cancellationToken);
         }
         catch (Exception ex)
         {
-            this.logger.LogError(ex, "HTTP request to OpenRouter failed");
+            logger.LogError(ex, "HTTP request to OpenRouter failed");
             throw new InvalidOperationException($"Failed to reach OpenRouter API: {ex.Message}", ex);
         }
 
@@ -82,7 +69,7 @@ public class OpenRouterService
             if (!response.IsSuccessStatusCode)
             {
                 string errorBody = await response.Content.ReadAsStringAsync(cancellationToken);
-                this.logger.LogError("OpenRouter API error {Status}: {Body}", response.StatusCode, errorBody);
+                logger.LogError("OpenRouter API error {Status}: {Body}", response.StatusCode, errorBody);
                 throw new InvalidOperationException($"OpenRouter API returned {(int)response.StatusCode}: {errorBody}");
             }
 
@@ -90,7 +77,7 @@ public class OpenRouterService
             TimeSpan duration = DateTime.UtcNow - startTime;
             string content = result?.Choices?.FirstOrDefault()?.Message?.Content
                              ?? throw new InvalidOperationException("Empty response from OpenRouter API.");
-            Usage usage = result?.Usage ?? new Usage();
+            Usage usage = result.Usage ?? new Usage();
 
             return new ChatResult
             {

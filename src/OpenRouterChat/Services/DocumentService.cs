@@ -27,12 +27,12 @@ public class DocumentService
     private static async Task<string> ExtractPdfTextAsync(Stream stream)
     {
         // Read into memory to allow seeking (PdfPig requires seekable stream)
-        using MemoryStream ms = new MemoryStream();
+        using MemoryStream ms = new();
         await stream.CopyToAsync(ms);
         ms.Seek(0, SeekOrigin.Begin);
 
         using PdfDocument? document = PdfDocument.Open(ms);
-        StringBuilder sb = new StringBuilder();
+        StringBuilder sb = new();
         foreach (Page? page in document.GetPages())
         {
             sb.AppendLine(page.Text);
@@ -46,7 +46,7 @@ public class DocumentService
 
     private static async Task<string> ExtractPlainTextAsync(Stream stream)
     {
-        using StreamReader reader = new StreamReader(stream, leaveOpen: true);
+        using StreamReader reader = new(stream, leaveOpen: true);
         string text = await reader.ReadToEndAsync();
         if (text.Length > MaxContextChars)
             text = text[..MaxContextChars] + "\n\n[Content truncated due to length...]";
